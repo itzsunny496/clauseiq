@@ -56,6 +56,7 @@ import { InvoiceReviewPanel } from "./components/InvoiceReviewPanel";
 import { ComplianceCalendar } from "./components/ComplianceCalendar";
 import { MultilingualSummaryPanel } from "./components/MultilingualSummaryPanel";
 import { RagChatPanel } from "./components/RagChatPanel";
+import { DocumentHighlightViewer } from "./components/DocumentHighlightViewer";
 
 export function App() {
   const [activeDoc, setActiveDoc] = useState<SampleDocument | null>(null);
@@ -75,7 +76,7 @@ export function App() {
   });
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "clauses" | "invoice" | "calendar" | "multilingual" | "rag" | "benchmark"
+    "overview" | "document" | "clauses" | "invoice" | "calendar" | "multilingual" | "rag" | "benchmark"
   >("overview");
 
   const [reviewState, setReviewState] = useState<Record<string, ReviewStatus>>({});
@@ -465,6 +466,17 @@ export function App() {
                 </button>
 
                 <button
+                  onClick={() => setActiveTab("document")}
+                  className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition ${
+                    activeTab === "document"
+                      ? "bg-amber-500 text-slate-950 shadow"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" /> Document &amp; Highlights
+                </button>
+
+                <button
                   onClick={() => setActiveTab("clauses")}
                   className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition ${
                     activeTab === "clauses"
@@ -542,6 +554,20 @@ export function App() {
               </div>
             )}
 
+            {activeTab === "document" && (
+              <DocumentHighlightViewer
+                documentText={analysisResult.extractedText}
+                clauses={analysisResult.clauses || []}
+                statutoryViolations={analysisResult.statutoryViolations || []}
+                fileName={analysisResult.fileName}
+                docType={analysisResult.docType}
+                riskScore={analysisResult.riskScore}
+                onSwitchToClauseAudit={(clauseId) => {
+                  setActiveTab("clauses");
+                }}
+              />
+            )}
+
             {activeTab === "clauses" && (
               <ClauseAuditList
                 clauses={analysisResult.clauses || []}
@@ -550,6 +576,9 @@ export function App() {
                   const updated = { ...analysisResult, clauses: updatedClauses };
                   setAnalysisResult(updated);
                   saveAnalysisToDb(updated);
+                }}
+                onViewInDocument={(clauseId) => {
+                  setActiveTab("document");
                 }}
               />
             )}

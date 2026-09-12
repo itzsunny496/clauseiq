@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import { ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
 import type { ClauseResult, Language } from "../types";
 import { effectiveValue, accept, edit, reject } from "../engine/humanReview";
@@ -27,6 +27,7 @@ interface Props {
   clauses: ClauseResult[];
   lang: Language;
   onUpdate: (updated: ClauseResult[]) => void;
+  onViewInDocument?: (clauseId: string) => void;
 }
 
 export function ClauseAuditList({ clauses, lang, onUpdate }: Props) {
@@ -116,6 +117,20 @@ export function ClauseAuditList({ clauses, lang, onUpdate }: Props) {
                     📅 {ev.eventType}: {new Date(ev.date).toLocaleDateString("en-IN")} — {ev.daysFromToday > 0 ? `${ev.daysFromToday} days away` : `OVERDUE by ${Math.abs(ev.daysFromToday)} days`}
                   </div>
                 ))}
+
+                {onViewInDocument && (
+                  <div className="flex justify-end pt-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewInDocument(clause.id);
+                      }}
+                      className="text-[11px] text-amber-400 hover:text-amber-300 font-semibold transition flex items-center gap-1"
+                    >
+                      <span>Highlight in Document Viewer</span> →
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
