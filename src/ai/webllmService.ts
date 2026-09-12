@@ -1,102 +1,112 @@
-import type { OllamaStatus } from "../types";
-import { getLocalSettings } from "../storage/indexedDb";
+import type { WebLLMStatus } from "../types";
 import { chunkDocument, searchDocumentVectors, VectorChunk } from "./localVectorRag";
+import { CreateMLCEngine, MLCEngine, InitProgressReport } from "@mlc-ai/web-llm";
 
-const DEFAULT_HOST = "http://127.0.0.1:11434";
-const CHAT_MODEL = "llama3.2:3b";
-const FALLBACK_MODELS = ["llama3.2:3b", "llama3.1:8b", "llama3:latest", "mistral", "qwen2.5:3b"];
+// --- Configuration ---
+const DEFAULT_MODEL_ID = "Llama-3.2-3B-Instruct-q4f16_1-MLC";
 
-export async function getActiveOllamaHost(): Promise<string> {
-  const settings = await getLocalSettings();
-  return settings.ollamaHost || DEFAULT_HOST;
+// --- Singleton Engine ---
+let engine: MLCEngine | null = null;
+let engineModelId: string = DEFAULT_MODEL_ID;
+let isInitializing = false;
+let initError: string | null = null;
+let downloadProgress = 0;
+let isModelLoaded = false;
+
+/**
+ * Check if WebGPU is supported in this browser
+ */
+async function checkWebGPUSupport(): Promise<boolean> {
+  try {
+    if (!navigator.gpu) return false;
+    const adapter = await navigator.gpu.requestAdapter();
+    return adapter !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Check connectivity directly to the user's on-device Ollama instance.
- * Probes http://127.0.0.1:11434/api/tags directly from browser.
+ * Get current WebLLM engine status
  */
-export async function getOllamaStatus(): Promise<OllamaStatus> {
-  const host = await getActiveOllamaHost();
-  let models: string[] = [];
-  let reachable = false;
-  let corsBlocked = false;
-
-  try {
-    const res = await fetch(`${host}/api/tags`, {
-      method: "GET",
-      signal: AbortSignal.timeout(2500),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      models = (data.models ?? []).map((m: { name: string }) => m.name);
-      reachable = true;
-    } else {
-      reachable = false;
-    }
-  } catch (err: any) {
-    // Check if error is due to CORS origin blocking
-    if (err.name === "TypeError" && (err.message.includes("Failed to fetch") || err.message.includes("NetworkError"))) {
-      corsBlocked = true;
-    }
-    reachable = false;
-  }
-
-  const targetModelReady = models.some((m) =>
-    FALLBACK_MODELS.some((fb) => m.toLowerCase().startsWith(fb.split(":")[0]))
-  );
-
+export async function getWebLLMStatus(): Promise<WebLLMStatus> {
+  const webGPUSupported = await checkWebGPUSupport();
   return {
-    isAvailable: reachable,
-    reachable,
-    corsBlocked,
-    customHost: host,
-    version: reachable ? "Local v0.3+" : undefined,
-    models,
-    targetModelReady,
-    embedModelReady: models.some((m) => m.includes("embed") || m.includes("nomic")),
+    isAvailable: webGPUSupported,
+    isModelLoaded,
+    isDownloading: isInitializing,
+    downloadProgress,
+    modelId: engineModelId,
+    error: initError || undefined,
   };
 }
 
-export const checkOllamaStatus = getOllamaStatus;
+export const checkWebLLMStatus = getWebLLMStatus;
 
 /**
- * Pull a model directly from local Ollama instance
+ * Initialize the WebLLM engine. Downloads model weights on first run
+ * (cached in browser Cache API for subsequent loads).
  */
-export async function pullModel(
-  model: string,
-  onProgress: (pct: number, speed?: string) => void
+export async function initializeWebLLM(
+  onProgress?: (report: { text: string; progress: number }) => void
 ): Promise<void> {
-  const host = await getActiveOllamaHost();
-  const res = await fetch(`${host}/api/pull`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: model, stream: true }),
-  });
-
-  if (!res.ok || !res.body) {
-    throw new Error(`Failed to initiate pull from local Ollama (${res.status} ${res.statusText})`);
+  if (engine && isModelLoaded) return;
+  if (isInitializing) {
+    while (isInitializing) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return;
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
+  isInitializing = true;
+  initError = null;
+  downloadProgress = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    for (const line of decoder.decode(value).split("\n").filter(Boolean)) {
-      try {
-        const obj = JSON.parse(line);
-        if (obj.total && obj.completed) {
-          const pct = Math.round((obj.completed / obj.total) * 100);
-          onProgress(pct);
-        }
-      } catch {
-        /* ignore parse ticks */
-      }
+  try {
+    const webGPUSupported = await checkWebGPUSupport();
+    if (!webGPUSupported) {
+      throw new Error(
+        "WebGPU is not supported in this browser. Please use Chrome 113+ or Edge 113+ for in-browser AI."
+      );
     }
+
+    engine = await CreateMLCEngine(engineModelId, {
+      initProgressCallback: (report: InitProgressReport) => {
+        const pct = Math.round((report.progress ?? 0) * 100);
+        downloadProgress = pct;
+        onProgress?.({
+          text: report.text,
+          progress: pct,
+        });
+      },
+    });
+
+    isModelLoaded = true;
+    downloadProgress = 100;
+  } catch (err: any) {
+    initError = err.message || String(err);
+    engine = null;
+    isModelLoaded = false;
+    throw err;
+  } finally {
+    isInitializing = false;
   }
 }
+
+/**
+ * Unload the WebLLM engine and free GPU memory
+ */
+export async function unloadWebLLM(): Promise<void> {
+  if (engine) {
+    await engine.unload();
+    engine = null;
+  }
+  isModelLoaded = false;
+  downloadProgress = 0;
+  initError = null;
+}
+
+// --- RAG Types ---
 
 export interface RagContext {
   fileName?: string;
@@ -123,15 +133,15 @@ export interface RagContext {
 export interface RagQueryResult {
   answer: string;
   citations: string[];
-  groundingSource: "ollama-local" | "wasm-vector-rag" | "statutory-rules";
+  groundingSource: "webllm-browser" | "wasm-vector-rag" | "statutory-rules";
   similarityScore?: number;
 }
 
 /**
  * In-Browser Grounded RAG Query Engine
  * 1. Executes in-browser semantic vector retrieval via WASM (@xenova/transformers).
- * 2. If local Ollama companion is connected, generates generative response.
- * 3. If local Ollama is offline, generates comprehensive deterministic legal audit response.
+ * 2. If WebLLM engine is loaded, generates generative response via WebGPU.
+ * 3. If WebLLM is not loaded, generates comprehensive deterministic legal audit response.
  */
 export async function queryRAG(
   question: string,
@@ -172,17 +182,17 @@ export async function queryRAG(
         (qLower.includes("payment") || qLower.includes("45") || qLower.includes("interest") || qLower.includes("msme")) &&
         flag.ruleId.startsWith("MSMED")
       ) {
-        citations.push(`${flag.act || "MSMED Act 2006"} ${flag.section || "§15"}: ${flag.citation || ""}`);
+        citations.push(`${flag.act || "MSMED Act 2006"} ${flag.section || "A\u00a715"}: ${flag.citation || ""}`);
       } else if (
         (qLower.includes("non-compete") || qLower.includes("compete") || qLower.includes("trade") || qLower.includes("restraint")) &&
         flag.ruleId.includes("NONCOMPETE")
       ) {
-        citations.push(`ICA 1872 §27: ${flag.citation || "Percept D'Mark v. Zaheer Khan (2006) 4 SCC 227"}`);
+        citations.push(`ICA 1872 A\u00a727: ${flag.citation || "Percept D'Mark v. Zaheer Khan (2006) 4 SCC 227"}`);
       } else if (
         (qLower.includes("arbitrat") || qLower.includes("dispute") || qLower.includes("tribunal")) &&
         flag.ruleId.includes("ACA")
       ) {
-        citations.push(`${flag.act || "Arbitration Act 1996"} ${flag.section || "§12(5)"}: ${flag.citation || "Perkins Eastman Precedent"}`);
+        citations.push(`${flag.act || "Arbitration Act 1996"} ${flag.section || "A\u00a712(5)"}: ${flag.citation || "Perkins Eastman Precedent"}`);
       } else if (
         (qLower.includes("indemn") || qLower.includes("liab")) &&
         flag.ruleId.includes("INDEMNITY")
@@ -194,21 +204,13 @@ export async function queryRAG(
 
   const uniqueCitations = Array.from(new Set(citations));
 
-  // Step 3: Check if Local Ollama Companion is reachable
-  const host = await getActiveOllamaHost();
-  const st = await getOllamaStatus();
-
-  if (st.isAvailable) {
+  // Step 3: Try WebLLM in-browser inference via WebGPU
+  if (engine && isModelLoaded) {
     try {
       const violationSummary =
         context?.statutoryViolations?.map((v) => `- ${v.section}: ${v.reasoning}`).join("\n") || "None detected";
 
-      const selectedModel =
-        st.models.find((m) => m.startsWith("llama3.2") || m.startsWith("llama3.1") || m.startsWith("llama3") || m.startsWith("mistral") || m.startsWith("qwen")) ||
-        st.models[0] ||
-        CHAT_MODEL;
-
-      const prompt = `You are ClauseIQ, an expert Indian MSME Legal AI assistant running 100% on-device.
+      const systemPrompt = `You are ClauseIQ, an expert Indian MSME Legal AI assistant running 100% in-browser via WebGPU.
 DOCUMENT CONTEXT:
 File: ${context?.fileName || "Active Document"} (${context?.docType || "contract"}, Risk Score: ${context?.riskScore || 0}/100)
 Detected Statutory Violations:
@@ -217,31 +219,28 @@ ${violationSummary}
 RELEVANT RETRIEVED SNIPPET (In-Browser Vector RAG):
 ${bestSnippet}
 
-USER INQUIRY: ${question}
-
 Provide a concise, practical, legally grounded answer for an Indian MSME owner. Highlight any statutory protections under MSMED Act 2006 (e.g. 45-day payment terms, 3x RBI rate compound interest) or Indian Contract Act 1872 Section 27 (void post-termination non-compete) where applicable.`;
 
-      const res = await fetch(`${host}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: selectedModel,
-          prompt,
-          stream: false,
-        }),
+      const reply = await engine.chat.completions.create({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: question },
+        ],
+        temperature: 0.3,
+        max_tokens: 512,
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const responseText = reply.choices?.[0]?.message?.content;
+      if (responseText) {
         return {
-          answer: data.response || "No response generated by local model.",
+          answer: responseText,
           citations: uniqueCitations,
-          groundingSource: "ollama-local",
+          groundingSource: "webllm-browser",
           similarityScore: topSimilarity,
         };
       }
-    } catch (ollamaErr) {
-      console.warn("Local Ollama inference failed; seamlessly falling back to in-browser statutory engine:", ollamaErr);
+    } catch (webllmErr) {
+      console.warn("WebLLM in-browser inference failed; falling back to statutory engine:", webllmErr);
     }
   }
 
@@ -249,7 +248,7 @@ Provide a concise, practical, legally grounded answer for an Indian MSME owner. 
   if (qLower.includes("payment") || qLower.includes("45") || qLower.includes("90") || qLower.includes("120") || qLower.includes("credit")) {
     return {
       answer:
-        "Under Section 15 of the MSMED Act 2006, payment terms agreed in writing with registered MSME suppliers CANNOT legally exceed 45 days from delivery/acceptance. Any contract clause stipulating 90 or 120 days is statutorily void and superseded by law.\n\nFurthermore, Section 16 mandates that overdue payments incur compound monthly interest at 3× the RBI bank rate, and buyers cannot deduct this interest under Section 23 of the Income Tax Act.",
+        "Under Section 15 of the MSMED Act 2006, payment terms agreed in writing with registered MSME suppliers CANNOT legally exceed 45 days from delivery/acceptance. Any contract clause stipulating 90 or 120 days is statutorily void and superseded by law.\n\nFurthermore, Section 16 mandates that overdue payments incur compound monthly interest at 3\u00d7 the RBI bank rate, and buyers cannot deduct this interest under Section 23 of the Income Tax Act.",
       citations: uniqueCitations,
       groundingSource: "statutory-rules",
       similarityScore: topSimilarity,
@@ -290,7 +289,7 @@ Provide a concise, practical, legally grounded answer for an Indian MSME owner. 
 
   if (qLower.includes("summary") || qLower.includes("overview") || qLower.includes("risk") || qLower.includes("audit")) {
     return {
-      answer: `Document Snapshot Analysis for "${context?.fileName || "Active Document"}":\n- Document Type: ${context?.docType?.toUpperCase() || "CONTRACT"}\n- Calculated Risk Score: ${context?.riskScore || 0}/100\n- Identified Statutory Risk Flags: ${context?.statutoryViolations?.length || 0}\n\nKey compliance checks verified against MSMED Act 2006 (Sec 15/16), ICA 1872 (Sec 27), and ACA 1996 (Sec 12(5)). All processing executed 100% on-device.`,
+      answer: `Document Snapshot Analysis for "${context?.fileName || "Active Document"}":\n- Document Type: ${context?.docType?.toUpperCase() || "CONTRACT"}\n- Calculated Risk Score: ${context?.riskScore || 0}/100\n- Identified Statutory Risk Flags: ${context?.statutoryViolations?.length || 0}\n\nKey compliance checks verified against MSMED Act 2006 (Sec 15/16), ICA 1872 (Sec 27), and ACA 1996 (Sec 12(5)). All processing executed 100% in-browser.`,
       citations: uniqueCitations,
       groundingSource: "wasm-vector-rag",
       similarityScore: topSimilarity,

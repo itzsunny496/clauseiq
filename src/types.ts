@@ -170,17 +170,17 @@ export interface AnalysisResult {
   sessionStats: SessionStats;
 }
 
-export interface OllamaStatus {
-  isAvailable?: boolean;
-  version?: string;
-  reachable?: boolean;
-  cliInstalled?: boolean;
-  corsBlocked?: boolean;
-  customHost?: string;
-  models: string[];
-  targetModelReady?: boolean;
-  embedModelReady?: boolean;
+export interface WebLLMStatus {
+  isAvailable: boolean;
+  isModelLoaded: boolean;
+  isDownloading: boolean;
+  downloadProgress: number;
+  modelId: string;
+  error?: string;
 }
+
+/** @deprecated Use WebLLMStatus instead */
+export type OllamaStatus = WebLLMStatus;
 
 export const EMPTY_SESSION_STATS: SessionStats = {
   total: 0,

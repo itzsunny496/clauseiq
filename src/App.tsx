@@ -20,10 +20,10 @@ import {
   ExternalLink,
 } from "lucide-react";
 
-import { AnalysisResult, DocType, OllamaStatus, ReviewStatus, ClauseResult } from "./types";
+import { AnalysisResult, DocType, WebLLMStatus, ReviewStatus, ClauseResult } from "./types";
 import { SAMPLE_DOCUMENTS, SampleDocument } from "./data/sampleDocuments";
 import { analyzeDocument } from "./engine/docPipeline";
-import { checkOllamaStatus } from "./ai/ollamaService";
+import { checkWebLLMStatus } from "./ai/webllmService";
 import { generateRegionalSummary } from "./ai/regionalSummarizer";
 import {
   saveAnalysisToDb,
@@ -37,7 +37,7 @@ import {
 } from "./storage/indexedDb";
 
 import { DocumentUploader } from "./components/DocumentUploader";
-import { OllamaStatusBadge } from "./components/OllamaStatusBadge";
+import { WebLLMStatusBadge } from "./components/WebLLMStatusBadge";
 import { ZeroUploadBadge } from "./components/ZeroUploadBadge";
 import { RiskScorecard } from "./components/RiskScorecard";
 import { NerEntityPanel } from "./components/NerEntityPanel";
@@ -53,9 +53,12 @@ export function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [savedAudits, setSavedAudits] = useState<SavedAuditItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
-  const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus>({
+  const [webllmStatus, setWebllmStatus] = useState<WebLLMStatus>({
     isAvailable: false,
-    models: [],
+    isModelLoaded: false,
+    isDownloading: false,
+    downloadProgress: 0,
+    modelId: "",
   });
 
   const [activeTab, setActiveTab] = useState<
@@ -74,16 +77,16 @@ export function App() {
   } | null>(null);
 
   useEffect(() => {
-    fetchOllamaStatus();
+    fetchWebLLMStatus();
     loadAuditHistory();
   }, []);
 
-  const fetchOllamaStatus = async () => {
+  const fetchWebLLMStatus = async () => {
     try {
-      const st = await checkOllamaStatus();
-      setOllamaStatus(st);
+      const st = await checkWebLLMStatus();
+      setWebllmStatus(st);
     } catch {
-      setOllamaStatus({ isAvailable: false, models: [] });
+      setWebllmStatus({ isAvailable: false, isModelLoaded: false, isDownloading: false, downloadProgress: 0, modelId: "" });
     }
   };
 
@@ -297,7 +300,7 @@ export function App() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        <OllamaStatusBadge status={ollamaStatus} onRefresh={fetchOllamaStatus} />
+        <WebLLMStatusBadge status={webllmStatus} onRefresh={fetchWebLLMStatus} />
 
         <DocumentUploader
           onAnalyzeText={handleAnalyzeText}

@@ -16,7 +16,7 @@ import {
   Cpu,
   ShieldCheck,
 } from "lucide-react";
-import { queryRAG, RagQueryResult } from "../ai/ollamaService";
+import { queryRAG, RagQueryResult } from "../ai/webllmService";
 import { AnalysisResult } from "../types";
 
 interface RagChatPanelProps {
@@ -274,8 +274,8 @@ export const RagChatPanel: React.FC<RagChatPanelProps> = ({ documentText, analys
                     </span>
                     {msg.groundingSource && (
                       <span className="text-[9px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-900 text-slate-400 border border-slate-700">
-                        {msg.groundingSource === "ollama-local"
-                          ? "Ollama (127.0.0.1)"
+                        {msg.groundingSource === "webllm-browser"
+                          ? "WebLLM (In-Browser WebGPU)"
                           : msg.groundingSource === "wasm-vector-rag"
                           ? "WASM MiniLM-L6"
                           : "Deterministic Rule Engine"}

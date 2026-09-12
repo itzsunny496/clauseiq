@@ -14,13 +14,11 @@ export interface SavedAuditItem {
 }
 
 export interface LocalAppSettings {
-  ollamaHost: string;
   enableLocalRag: boolean;
   preferredLanguage: string;
 }
 
 const DEFAULT_SETTINGS: LocalAppSettings = {
-  ollamaHost: "http://127.0.0.1:11434",
   enableLocalRag: true,
   preferredLanguage: "en",
 };
