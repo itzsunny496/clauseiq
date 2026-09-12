@@ -1,40 +1,71 @@
 import React, { useState } from "react";
-import { Upload, FileText, Clipboard, Sparkles, ShieldCheck, ArrowRight, Zap, HardDrive, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, Clipboard, Sparkles, ShieldCheck, ArrowRight, Zap, HardDrive, CheckCircle2, FolderClock, Trash2, Layers } from "lucide-react";
 import { SAMPLE_DOCUMENTS, SampleDocument } from "../data/sampleDocuments";
+import { SavedAuditItem } from "../storage/indexedDb";
 
 interface DocumentUploaderProps {
   onAnalyzeText: (text: string, fileName?: string) => void;
   onSelectSample: (sample: SampleDocument) => void;
   isProcessing: boolean;
+  savedAudits?: SavedAuditItem[];
+  onLoadSavedAudit?: (item: SavedAuditItem) => void;
+  onDeleteSavedAudit?: (id: string, e: React.MouseEvent) => void;
 }
 
 export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
   onAnalyzeText,
   onSelectSample,
   isProcessing,
+  savedAudits = [],
+  onLoadSavedAudit,
+  onDeleteSavedAudit,
 }) => {
-  const [activeTab, setActiveTab] = useState<"samples" | "file" | "paste">("file");
+  const [activeTab, setActiveTab] = useState<"samples" | "file" | "paste">("samples");
   const [pastedText, setPastedText] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<{
+    status: "idle" | "reading" | "completed";
+    fileName: string;
+    details?: string;
+  } | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setSelectedFileName(file.name);
+    setUploadStatus({
+      status: "reading",
+      fileName: file.name,
+      details: `Reading ${(file.size / 1024).toFixed(1)} KB into browser memory...`,
+    });
 
-    if (file.name.endsWith(".pdf")) {
-      // PDF handled by pdfjs-dist directly from ArrayBuffer in browser memory
-      const { extractText } = await import("../ai/ocrService");
-      const result = await extractText(file);
-      onAnalyzeText(result.text, file.name);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const content = evt.target?.result as string;
-        onAnalyzeText(content, file.name);
-      };
-      reader.readAsText(file);
+    try {
+      if (file.name.endsWith(".pdf")) {
+        const { extractText } = await import("../ai/ocrService");
+        const result = await extractText(file);
+        setUploadStatus({
+          status: "completed",
+          fileName: file.name,
+          details: `PDF parsed successfully (${result.pageCount || 1} pages, ${result.text.length} characters). Ready for statutory audit.`,
+        });
+        onAnalyzeText(result.text, file.name);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const content = (evt.target?.result as string) || "";
+          setUploadStatus({
+            status: "completed",
+            fileName: file.name,
+            details: `Text file loaded successfully (${content.length} characters). Ready for statutory audit.`,
+          });
+          onAnalyzeText(content, file.name);
+        };
+        reader.readAsText(file);
+      }
+    } catch (err: any) {
+      setUploadStatus(null);
+      alert("Error reading file: " + (err.message || String(err)));
     }
   };
 
@@ -44,25 +75,62 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
     setSelectedFileName(file.name);
+    setUploadStatus({
+      status: "reading",
+      fileName: file.name,
+      details: `Reading ${(file.size / 1024).toFixed(1)} KB into browser memory...`,
+    });
 
-    if (file.name.endsWith(".pdf")) {
-      const { extractText } = await import("../ai/ocrService");
-      const result = await extractText(file);
-      onAnalyzeText(result.text, file.name);
-    } else {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        const content = evt.target?.result as string;
-        onAnalyzeText(content, file.name);
-      };
-      reader.readAsText(file);
+    try {
+      if (file.name.endsWith(".pdf")) {
+        const { extractText } = await import("../ai/ocrService");
+        const result = await extractText(file);
+        setUploadStatus({
+          status: "completed",
+          fileName: file.name,
+          details: `PDF parsed successfully (${result.pageCount || 1} pages, ${result.text.length} characters). Ready for statutory audit.`,
+        });
+        onAnalyzeText(result.text, file.name);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const content = (evt.target?.result as string) || "";
+          setUploadStatus({
+            status: "completed",
+            fileName: file.name,
+            details: `Text file loaded successfully (${content.length} characters). Ready for statutory audit.`,
+          });
+          onAnalyzeText(content, file.name);
+        };
+        reader.readAsText(file);
+      }
+    } catch (err: any) {
+      setUploadStatus(null);
+      alert("Error reading dropped file: " + (err.message || String(err)));
     }
   };
 
   const handlePasteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pastedText.trim()) return;
-    onAnalyzeText(pastedText, "Pasted_Legal_Document.txt");
+    const fileName = "Pasted_Legal_Document.txt";
+    setSelectedFileName(fileName);
+    setUploadStatus({
+      status: "completed",
+      fileName,
+      details: `Pasted text ingested (${pastedText.length} characters). Ready for statutory audit.`,
+    });
+    onAnalyzeText(pastedText, fileName);
+  };
+
+  const handleSampleClick = (doc: SampleDocument) => {
+    setSelectedFileName(doc.filename);
+    setUploadStatus({
+      status: "completed",
+      fileName: doc.filename,
+      details: `Loaded sample ${doc.name} (${doc.content.length} characters).`,
+    });
+    onSelectSample(doc);
   };
 
   return (
@@ -79,7 +147,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
             <h2 className="text-lg font-bold text-slate-100">Document Intelligence Workspace</h2>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            Select a curated Indian legal sample or load your agreement for a 100% local on-device statutory audit.
+            Select a contract from the suite or load a new agreement for a 100% local on-device statutory audit.
           </p>
         </div>
 
@@ -93,7 +161,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60"
             }`}
           >
-            <Zap className="w-3.5 h-3.5" /> Hackathon Benchmark Suite
+            <Layers className="w-3.5 h-3.5" /> Contract Suite {savedAudits.length > 0 && `(${savedAudits.length + SAMPLE_DOCUMENTS.length})`}
           </button>
 
           <button
@@ -120,68 +188,196 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
         </div>
       </div>
 
-      {/* Tab 1: Pre-loaded Demo Benchmark Set */}
+      {/* Tab 1: Contract Suite (Uploaded & Saved Contracts + Benchmark Dataset) */}
       {activeTab === "samples" && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Curated MSME Legal Dataset (Contracts &amp; Invoices)
-            </span>
-            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 font-mono">
-              6 Test Cases Ready
-            </span>
-          </div>
+        <div className="space-y-6">
+          {/* Section 1: User's Uploaded & Saved Contracts in Suite */}
+          {savedAudits.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                  <FolderClock className="w-4 h-4" /> My Uploaded &amp; Saved Contracts ({savedAudits.length})
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">
+                  On-Device IndexedDB
+                </span>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {SAMPLE_DOCUMENTS.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={() => !isProcessing && onSelectSample(doc)}
-                className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 group flex flex-col justify-between relative overflow-hidden"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span
-                      className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                        doc.type === "contract"
-                          ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-                          : doc.type === "invoice"
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                          : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                      }`}
-                    >
-                      {doc.type}
-                    </span>
-                    <span
-                      className={`text-xs font-bold font-mono ${
-                        doc.riskScore >= 75
-                          ? "text-rose-400"
-                          : doc.riskScore >= 40
-                          ? "text-amber-400"
-                          : "text-emerald-400"
-                      }`}
-                    >
-                      Risk: {doc.riskScore}/100
-                    </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {savedAudits.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => onLoadSavedAudit?.(item)}
+                    className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 group flex flex-col justify-between border-emerald-500/30 hover:border-emerald-500/60 hover:shadow-lg hover:shadow-emerald-500/10 relative overflow-hidden"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span
+                          className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                            item.docType === "contract"
+                              ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                              : item.docType === "invoice"
+                              ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          }`}
+                        >
+                          {item.docType}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`text-xs font-bold font-mono ${
+                              item.riskScore >= 75
+                                ? "text-rose-400"
+                                : item.riskScore >= 40
+                                ? "text-amber-400"
+                                : "text-emerald-400"
+                            }`}
+                          >
+                            Risk: {item.riskScore}/100
+                          </span>
+                          {onDeleteSavedAudit && (
+                            <button
+                              onClick={(e) => onDeleteSavedAudit(item.id, e)}
+                              className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-slate-800 transition"
+                              title="Delete saved contract"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <h4 className="font-bold text-slate-100 text-sm group-hover:text-emerald-400 transition-colors truncate">
+                        {item.fileName}
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {item.summaryPreview || "Uploaded legal document stored locally in browser IndexedDB."}
+                      </p>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-mono text-[10px]">
+                        {new Date(item.processedAt).toLocaleDateString()} • {item.clauseCount || 0} Clauses
+                      </span>
+                      <span className="font-semibold text-emerald-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 text-[11px]">
+                        Open Audit <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Section 2: Benchmark Dataset Samples */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400" /> Benchmark Test Contracts ({SAMPLE_DOCUMENTS.length})
+              </span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
+                Curated MSME Dataset
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {SAMPLE_DOCUMENTS.map((doc) => (
+                <div
+                  key={doc.id}
+                  onClick={() => !isProcessing && handleSampleClick(doc)}
+                  className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-300 group flex flex-col justify-between relative overflow-hidden"
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                          doc.type === "contract"
+                            ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                            : doc.type === "invoice"
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                            : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        }`}
+                      >
+                        {doc.type}
+                      </span>
+                      <span
+                        className={`text-xs font-bold font-mono ${
+                          doc.riskScore >= 75
+                            ? "text-rose-400"
+                            : doc.riskScore >= 40
+                            ? "text-amber-400"
+                            : "text-emerald-400"
+                        }`}
+                      >
+                        Risk: {doc.riskScore}/100
+                      </span>
+                    </div>
+
+                    <h4 className="font-bold text-slate-100 text-sm group-hover:text-amber-400 transition-colors">
+                      {doc.name}
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                      {doc.description}
+                    </p>
                   </div>
 
-                  <h4 className="font-bold text-slate-100 text-sm group-hover:text-amber-400 transition-colors">
-                    {doc.name}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                    {doc.description}
-                  </p>
+                  <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 font-mono text-[10px]">{doc.filename}</span>
+                    <span className="font-semibold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 text-[11px]">
+                      1-Click Audit <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
                 </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
-                  <span className="text-slate-500 font-mono text-[10px]">{doc.filename}</span>
-                  <span className="font-semibold text-amber-400 group-hover:translate-x-1 transition-transform flex items-center gap-1 text-[11px]">
-                    1-Click Audit <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
+        </div>
+      )}
+
+      {/* Upload State & Completion Banner */}
+      {uploadStatus && (
+        <div
+          className={`p-4 rounded-xl border flex items-center justify-between gap-4 transition-all duration-300 ${
+            uploadStatus.status === "completed"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 shadow-lg shadow-emerald-500/5"
+              : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {uploadStatus.status === "completed" ? (
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 animate-spin">
+                <Sparkles className="w-4 h-4" />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-bold text-slate-100">
+                  {uploadStatus.status === "completed"
+                    ? "Document Upload Completed Successfully"
+                    : "Uploading & Reading Document..."}
+                </h4>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-700">
+                  {uploadStatus.fileName}
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                {uploadStatus.details}
+              </p>
+            </div>
+          </div>
+
+          {uploadStatus.status === "completed" && (
+            <button
+              onClick={() => setUploadStatus(null)}
+              className="text-slate-400 hover:text-slate-200 text-xs px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 transition"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
 

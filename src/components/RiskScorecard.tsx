@@ -3,7 +3,7 @@ import type { AnalysisResult, RiskLevel, Language } from "../types";
 import { effectiveValue, computeStats } from "../engine/humanReview";
 import { t } from "../i18n";
 import { exportSingleAuditToJsonFile } from "../storage/indexedDb";
-import { FileDown, HardDrive } from "lucide-react";
+import { Save, HardDrive } from "lucide-react";
 
 interface Props { result: AnalysisResult; lang: Language }
 
@@ -30,22 +30,37 @@ export function RiskScorecard({ result, lang }: Props) {
 
   const c = counts(view === "human");
   const total = clauses.length || 1;
-  const score = Math.max(0, Math.round(100 - (c.High * 25 + c.Medium * 10) / total));
+  const score = clauses.length === 0 ? 100 : Math.max(0, Math.round(100 - (c.High * 25 + c.Medium * 10) / total));
 
-  const scoreColor = score >= 75 ? "text-green-400" : score >= 50 ? "text-amber-400" : "text-red-400";
+  const scoreColor = score >= 75 ? "text-emerald-400" : score >= 50 ? "text-amber-400" : "text-rose-400";
+  const scoreLabel =
+    clauses.length === 0
+      ? "No High-Risk Clauses Detected"
+      : score >= 75
+      ? "Safe (Low Risk)"
+      : score >= 50
+      ? "Moderate Risk"
+      : "High Risk Detected";
+
+  const reviewedCount = stats.accepted + stats.edited + stats.rejected;
 
   return (
     <div className="card-glass rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-white text-sm">Risk Scorecard</h2>
+        <div>
+          <h2 className="font-semibold text-white text-sm">Contract Safety &amp; Compliance Scorecard</h2>
+          <p className="text-[11px] text-slate-400">
+            Higher score indicates fewer statutory &amp; liability risks (100 = 100% Safe).
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => exportSingleAuditToJsonFile(result)}
-            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
-            title="Download this document audit as a JSON report to your device"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 transition font-semibold shadow-sm"
+            title="Download and save this contract audit to your device"
           >
-            <FileDown className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Save to Device</span>
+            <Save className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Save Contract</span>
           </button>
           <div className="flex rounded-lg overflow-hidden border border-white/10 text-xs">
             <button onClick={() => setView("ai")} className={`px-3 py-1 transition-colors ${view === "ai" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}>AI</button>
@@ -54,15 +69,28 @@ export function RiskScorecard({ result, lang }: Props) {
         </div>
       </div>
 
-      {/* Score ring */}
+      {/* Score ring & Risk Breakdown */}
       <div className="flex items-center gap-6">
-        <div className={`text-5xl font-bold tabular-nums ${scoreColor}`}>{score}<span className="text-2xl text-gray-500">/100</span></div>
+        <div>
+          <div className={`text-5xl font-bold tabular-nums ${scoreColor}`}>
+            {score}<span className="text-2xl text-gray-500">/100</span>
+          </div>
+          <span className={`text-[11px] font-bold block mt-1 ${scoreColor}`}>
+            {scoreLabel}
+          </span>
+        </div>
+
         <div className="space-y-1.5 flex-1">
           {(["High","Medium","Low","Unclassified"] as const).map((r) => (
             <div key={r} className="flex items-center gap-2 text-xs">
               <span className={`w-16 ${RISK_COLORS[r]}`}>{r}</span>
               <div className="flex-1 bg-white/5 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full transition-all duration-500 ${r==="High"?"bg-red-500":r==="Medium"?"bg-amber-500":r==="Low"?"bg-green-500":"bg-gray-500"}`} style={{ width: `${Math.round((c[r] / total) * 100)}%` }} />
+                <div
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    r === "High" ? "bg-red-500" : r === "Medium" ? "bg-amber-500" : r === "Low" ? "bg-green-500" : "bg-gray-500"
+                  }`}
+                  style={{ width: `${clauses.length > 0 ? Math.round((c[r] / total) * 100) : 0}%` }}
+                />
               </div>
               <span className="text-gray-400 w-4 text-right">{c[r]}</span>
             </div>
@@ -81,7 +109,7 @@ export function RiskScorecard({ result, lang }: Props) {
           <p className="text-xs text-gray-500">Pending Review</p>
         </div>
         <div className="text-center">
-          <p className="text-xl font-bold text-emerald-400">{stats.agreed + stats.overridden}</p>
+          <p className="text-xl font-bold text-emerald-400">{reviewedCount}</p>
           <p className="text-xs text-gray-500">Reviewed</p>
         </div>
       </div>

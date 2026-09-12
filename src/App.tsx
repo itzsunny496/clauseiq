@@ -80,6 +80,14 @@ export function App() {
 
   const [reviewState, setReviewState] = useState<Record<string, ReviewStatus>>({});
 
+  const [uploadNotification, setUploadNotification] = useState<{
+    message: string;
+    fileName: string;
+    timeMs: number;
+    docType: string;
+    violationsCount: number;
+  } | null>(null);
+
   const [benchmarkResult, setBenchmarkResult] = useState<{
     totalDocs: number;
     precision: number;
@@ -164,6 +172,18 @@ export function App() {
       await saveAnalysisToDb(res);
       await saveReviewStateToDb(res.id, initialReview);
       await loadAuditHistory();
+
+      // Show high-visibility upload completion notification
+      setUploadNotification({
+        message: "Document Upload & Statutory Audit Completed Successfully",
+        fileName: res.fileName || "Legal Document",
+        timeMs: res.processingTimeMs,
+        docType: res.docType,
+        violationsCount: res.statutoryViolations?.length || 0,
+      });
+      setTimeout(() => {
+        setUploadNotification(null);
+      }, 7000);
 
       if (res.docType === "invoice") {
         setActiveTab("invoice");
@@ -347,10 +367,57 @@ export function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <WebLLMStatusBadge status={webllmStatus} onRefresh={fetchWebLLMStatus} />
 
+        {/* Global Upload & Analysis Success Notification */}
+        {uploadNotification && (
+          <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4 shadow-xl shadow-emerald-500/5 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h4 className="text-sm font-bold text-emerald-300">
+                    {uploadNotification.message}
+                  </h4>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-200 border border-slate-700">
+                    {uploadNotification.fileName}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    {uploadNotification.docType}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Extracted and verified in <strong>{uploadNotification.timeMs}ms</strong>. Stored locally in browser IndexedDB.
+                  {uploadNotification.violationsCount > 0 ? (
+                    <span className="text-amber-300 ml-1.5 font-semibold">
+                      ({uploadNotification.violationsCount} statutory flags detected)
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 ml-1.5">
+                      (No statutory violations detected)
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setUploadNotification(null)}
+              className="p-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700 text-xs transition"
+              title="Dismiss notification"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         <DocumentUploader
           onAnalyzeText={handleAnalyzeText}
           onSelectSample={handleSelectSample}
           isProcessing={isProcessing}
+          savedAudits={savedAudits}
+          onLoadSavedAudit={handleLoadSavedAudit}
+          onDeleteSavedAudit={handleDeleteSavedAudit}
         />
 
         {isProcessing && (
@@ -369,8 +436,13 @@ export function App() {
               <div className="flex items-center gap-3">
                 <FileText className="w-5 h-5 text-amber-400" />
                 <div>
-                  <h2 className="text-lg font-bold text-slate-100">{analysisResult.fileName}</h2>
-                  <p className="text-xs text-slate-400">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-slate-100">{analysisResult.fileName}</h2>
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      <CheckCircle2 className="w-3 h-3" /> Upload Complete
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-0.5">
                     Detected Document Class:{" "}
                     <span className="font-semibold text-amber-400 uppercase font-mono">
                       {analysisResult.docType}
