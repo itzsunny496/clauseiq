@@ -170,6 +170,15 @@ export interface AnalysisResult {
   sessionStats: SessionStats;
 }
 
+export interface AvailableModel {
+  id: string;
+  name: string;
+  size: string;
+  vramRequirement: string;
+  recommendedFor: string;
+  isDefault?: boolean;
+}
+
 export interface WebLLMStatus {
   isAvailable: boolean;
   isModelLoaded: boolean;
@@ -177,6 +186,8 @@ export interface WebLLMStatus {
   downloadProgress: number;
   modelId: string;
   error?: string;
+  hasFp16?: boolean;
+  gpuAdapterName?: string;
 }
 
 /** @deprecated Use WebLLMStatus instead */
