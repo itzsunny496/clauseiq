@@ -1,7 +1,9 @@
-﻿import React, { useState } from "react";
+import React, { useState } from "react";
 import type { AnalysisResult, RiskLevel, Language } from "../types";
 import { effectiveValue, computeStats } from "../engine/humanReview";
 import { t } from "../i18n";
+import { exportSingleAuditToJsonFile } from "../storage/indexedDb";
+import { FileDown, HardDrive } from "lucide-react";
 
 interface Props { result: AnalysisResult; lang: Language }
 
@@ -36,9 +38,19 @@ export function RiskScorecard({ result, lang }: Props) {
     <div className="card-glass rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-white text-sm">Risk Scorecard</h2>
-        <div className="flex rounded-lg overflow-hidden border border-white/10 text-xs">
-          <button onClick={() => setView("ai")} className={`px-3 py-1 transition-colors ${view === "ai" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}>AI</button>
-          <button onClick={() => setView("human")} className={`px-3 py-1 transition-colors ${view === "human" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}>Human</button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => exportSingleAuditToJsonFile(result)}
+            className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+            title="Download this document audit as a JSON report to your device"
+          >
+            <FileDown className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Save to Device</span>
+          </button>
+          <div className="flex rounded-lg overflow-hidden border border-white/10 text-xs">
+            <button onClick={() => setView("ai")} className={`px-3 py-1 transition-colors ${view === "ai" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}>AI</button>
+            <button onClick={() => setView("human")} className={`px-3 py-1 transition-colors ${view === "human" ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-white"}`}>Human</button>
+          </div>
         </div>
       </div>
 
@@ -69,24 +81,15 @@ export function RiskScorecard({ result, lang }: Props) {
           <p className="text-xs text-gray-500">Pending Review</p>
         </div>
         <div className="text-center">
-          <p className="text-xl font-bold text-indigo-400">{stats.correctionRate}%</p>
-          <p className="text-xs text-gray-500">{t("CORRECTION_RATE", lang)}</p>
+          <p className="text-xl font-bold text-emerald-400">{stats.agreed + stats.overridden}</p>
+          <p className="text-xs text-gray-500">Reviewed</p>
         </div>
       </div>
 
-      {stats.total > 0 && (
-        <p className="text-xs text-gray-500 text-center">
-          Reviewer corrected {stats.edited + stats.rejected} of {stats.total} AI classifications ({stats.correctionRate}%)
-        </p>
-      )}
-
-      {/* OCR info */}
-      {result.ocr.method === "tesseract" && (
-        <div className="text-xs text-amber-400 bg-amber-500/10 rounded-lg px-3 py-2">
-          🔍 OCR used (Tesseract) — confidence {result.ocr.confidence.toFixed(0)}%
-          {result.ocr.confidence < 70 && " — Low confidence, verify extracted text"}
-        </div>
-      )}
+      <div className="flex items-center gap-1.5 text-[11px] text-slate-400 pt-1">
+        <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+        <span>Stored privately in your device's IndexedDB</span>
+      </div>
     </div>
   );
 }

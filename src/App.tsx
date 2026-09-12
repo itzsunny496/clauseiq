@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ShieldCheck,
   FileText,
@@ -18,6 +18,11 @@ import {
   HardDrive,
   X,
   ExternalLink,
+  Download,
+  Upload,
+  Database,
+  FileDown,
+  Save,
 } from "lucide-react";
 
 import { AnalysisResult, DocType, WebLLMStatus, ReviewStatus, ClauseResult } from "./types";
@@ -34,6 +39,11 @@ import {
   saveReviewStateToDb,
   getReviewStateFromDb,
   SavedAuditItem,
+  exportAllDataToDeviceFile,
+  exportSingleAuditToJsonFile,
+  importDataFromDeviceFile,
+  getDeviceStorageEstimate,
+  DeviceStorageEstimate,
 } from "./storage/indexedDb";
 
 import { DocumentUploader } from "./components/DocumentUploader";
@@ -53,6 +63,9 @@ export function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [savedAudits, setSavedAudits] = useState<SavedAuditItem[]>([]);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [storageEstimate, setStorageEstimate] = useState<DeviceStorageEstimate | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [webllmStatus, setWebllmStatus] = useState<WebLLMStatus>({
     isAvailable: false,
     isModelLoaded: false,
@@ -93,6 +106,38 @@ export function App() {
   const loadAuditHistory = async () => {
     const audits = await getAllAuditsFromDb();
     setSavedAudits(audits);
+    try {
+      const est = await getDeviceStorageEstimate();
+      setStorageEstimate(est);
+    } catch {}
+  };
+
+  const handleExportAllToDevice = async () => {
+    try {
+      await exportAllDataToDeviceFile();
+    } catch (err: any) {
+      alert("Failed to export backup: " + (err.message || String(err)));
+    }
+  };
+
+  const handleExportCurrentAudit = () => {
+    if (!analysisResult) return;
+    exportSingleAuditToJsonFile(analysisResult);
+  };
+
+  const handleImportFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportStatus("Importing backup file...");
+    const res = await importDataFromDeviceFile(file);
+    setImportStatus(res.message);
+    if (res.success) {
+      await loadAuditHistory();
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+    setTimeout(() => setImportStatus(null), 4000);
   };
 
   const handleAnalyzeText = async (text: string, fileName?: string) => {
@@ -282,7 +327,7 @@ export function App() {
               title="View on-device IndexedDB audit history"
             >
               <FolderClock className="w-3.5 h-3.5 text-amber-400" />
-              <span>Local History ({savedAudits.length})</span>
+              <span>Device Storage ({savedAudits.length})</span>
             </button>
 
             {/* Benchmark Button */}
@@ -534,22 +579,23 @@ export function App() {
         )}
       </main>
 
-      {/* Local IndexedDB History Modal */}
+      {/* Local Device Storage & History Modal */}
       {showHistoryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
           <div
-            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4"
+            className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <FolderClock className="w-4 h-4" />
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <HardDrive className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Browser-Local Audit History</h3>
+                  <h3 className="text-base font-bold text-white">Local Device Storage & History</h3>
                   <p className="text-xs text-slate-400">
-                    Persisted in IndexedDB (<code className="text-emerald-400 font-mono">ClauseIQ_DB</code>). Never sent to any cloud server.
+                    Stored on your device in IndexedDB (<code className="text-emerald-400 font-mono">ClauseIQ_DB</code>). 0 bytes leave your machine.
                   </p>
                 </div>
               </div>
@@ -561,28 +607,91 @@ export function App() {
               </button>
             </div>
 
-            <div className="max-h-80 overflow-y-auto space-y-2">
+            {/* Storage Info Banner */}
+            <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+                  <Database className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="text-xs font-semibold text-slate-200">On-Device Storage Status</span>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                    <span>Stored: <strong className="text-emerald-400">{savedAudits.length} documents</strong></span>
+                    <span>•</span>
+                    <span>Usage: <strong className="text-blue-400">{storageEstimate?.usageFormatted || "0 KB"}</strong></span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons: Export / Import */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImportFileChange}
+                  accept=".json"
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition"
+                  title="Restore documents from a JSON backup file on your device"
+                >
+                  <Upload className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Import Backup</span>
+                </button>
+
+                <button
+                  onClick={handleExportAllToDevice}
+                  disabled={savedAudits.length === 0}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition"
+                  title="Download full database as JSON file to your device"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export All to Device</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Import Status Alert */}
+            {importStatus && (
+              <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 shrink-0">
+                {importStatus}
+              </div>
+            )}
+
+            {/* Document List */}
+            <div className="flex-1 overflow-y-auto space-y-2 min-h-0 pr-1">
               {savedAudits.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs">
-                  No local audits stored yet. Process a contract or invoice to see it saved here.
+                <div className="p-8 text-center text-slate-500 text-xs bg-slate-950/40 rounded-xl border border-slate-800/40">
+                  <HardDrive className="w-8 h-8 text-slate-600 mx-auto mb-2 opacity-50" />
+                  <p>No documents stored on this device yet.</p>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    Upload or paste any contract/invoice to save its analysis to your device.
+                  </p>
                 </div>
               ) : (
                 savedAudits.map((item) => (
                   <div
                     key={item.id}
                     onClick={() => handleLoadSavedAudit(item)}
-                    className="p-3 bg-slate-950 border border-slate-800/80 hover:border-amber-500/40 rounded-xl flex items-center justify-between cursor-pointer transition group"
+                    className="p-3 bg-slate-950 border border-slate-800/80 hover:border-emerald-500/40 rounded-xl flex items-center justify-between cursor-pointer transition group"
                   >
-                    <div className="flex items-center gap-3">
-                      <FileText className="w-4 h-4 text-amber-400 shrink-0" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-100 group-hover:text-amber-300 transition">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-xs text-slate-100 group-hover:text-emerald-300 transition truncate max-w-[200px] sm:max-w-xs">
                             {item.fileName}
                           </span>
                           <span className="text-[10px] uppercase font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700">
                             {item.docType}
                           </span>
+                          {item.statutoryViolationCount > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              {item.statutoryViolationCount} violations
+                            </span>
+                          )}
                         </div>
                         <span className="text-[10px] text-slate-500">
                           {new Date(item.processedAt).toLocaleString()}
@@ -590,23 +699,36 @@ export function App() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 shrink-0">
                       <span
-                        className={`text-xs font-bold font-mono ${
+                        className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
                           item.riskScore >= 70
-                            ? "text-rose-400"
+                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
                             : item.riskScore >= 40
-                            ? "text-amber-400"
-                            : "text-emerald-400"
+                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                         }`}
                       >
-                        Risk: {item.riskScore}/100
+                        Risk: {item.riskScore}
                       </span>
 
+                      {/* Export Single JSON */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (item.result) exportSingleAuditToJsonFile(item.result);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition"
+                        title="Download report JSON to device"
+                      >
+                        <FileDown className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete */}
                       <button
                         onClick={(e) => handleDeleteSavedAudit(item.id, e)}
-                        className="p-1 text-slate-500 hover:text-rose-400 transition"
-                        title="Delete from local database"
+                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition"
+                        title="Delete from device storage"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -616,13 +738,14 @@ export function App() {
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex items-center justify-between">
+            {/* Modal Footer */}
+            <div className="pt-3 border-t border-slate-800 flex items-center justify-between shrink-0">
               {savedAudits.length > 0 ? (
                 <button
                   onClick={handleClearAllHistory}
                   className="text-xs text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1 transition"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Clear All Local History
+                  <Trash2 className="w-3.5 h-3.5" /> Clear All Device Storage
                 </button>
               ) : (
                 <div />

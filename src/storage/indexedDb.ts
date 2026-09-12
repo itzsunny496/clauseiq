@@ -18,6 +18,13 @@ export interface LocalAppSettings {
   preferredLanguage: string;
 }
 
+export interface DeviceStorageEstimate {
+  usageBytes: number;
+  quotaBytes: number;
+  usageFormatted: string;
+  documentCount: number;
+}
+
 const DEFAULT_SETTINGS: LocalAppSettings = {
   enableLocalRag: true,
   preferredLanguage: "en",
@@ -56,7 +63,7 @@ function openDatabase(): Promise<IDBDatabase> {
 }
 
 /**
- * Save an analysis result in browser IndexedDB
+ * Save an analysis result in browser IndexedDB on device
  */
 export async function saveAnalysisToDb(result: AnalysisResult): Promise<void> {
   try {
@@ -88,7 +95,7 @@ export async function saveAnalysisToDb(result: AnalysisResult): Promise<void> {
 }
 
 /**
- * Get all saved audit summaries from IndexedDB (ordered newest first)
+ * Get all saved audit summaries from IndexedDB on device (ordered newest first)
  */
 export async function getAllAuditsFromDb(): Promise<SavedAuditItem[]> {
   try {
@@ -143,7 +150,7 @@ export async function getAuditByIdFromDb(id: string): Promise<AnalysisResult | n
 }
 
 /**
- * Delete an audit from IndexedDB
+ * Delete an audit from IndexedDB on device
  */
 export async function deleteAuditFromDb(id: string): Promise<void> {
   try {
@@ -161,7 +168,7 @@ export async function deleteAuditFromDb(id: string): Promise<void> {
 }
 
 /**
- * Clear all local audits from browser storage
+ * Clear all local audits from device storage
  */
 export async function clearAllAuditsFromDb(): Promise<void> {
   try {
@@ -211,6 +218,120 @@ export async function getReviewStateFromDb(docId: string): Promise<Record<string
     });
   } catch (err) {
     return null;
+  }
+}
+
+/**
+ * Get device storage estimate for on-device data
+ */
+export async function getDeviceStorageEstimate(): Promise<DeviceStorageEstimate> {
+  let usage = 0;
+  let quota = 0;
+  let count = 0;
+
+  try {
+    if (navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate();
+      usage = est.usage || 0;
+      quota = est.quota || 0;
+    }
+  } catch {}
+
+  try {
+    const audits = await getAllAuditsFromDb();
+    count = audits.length;
+  } catch {}
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  };
+
+  return {
+    usageBytes: usage,
+    quotaBytes: quota,
+    usageFormatted: formatBytes(usage),
+    documentCount: count,
+  };
+}
+
+/**
+ * Export all on-device audit data as a JSON backup file to user's computer
+ */
+export async function exportAllDataToDeviceFile(): Promise<void> {
+  const audits = await getAllAuditsFromDb();
+  const exportPayload = {
+    app: "ClauseIQ",
+    version: "1.0.0",
+    exportedAt: new Date().toISOString(),
+    totalDocuments: audits.length,
+    documents: audits,
+  };
+
+  const jsonString = JSON.stringify(exportPayload, null, 2);
+  const blob = new Blob([jsonString], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const dateStr = new Date().toISOString().split("T")[0];
+  a.href = url;
+  a.download = `clauseiq_device_backup_${dateStr}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export a single analysis result as a JSON file to user's computer
+ */
+export function exportSingleAuditToJsonFile(audit: AnalysisResult): void {
+  const jsonString = JSON.stringify(audit, null, 2);
+  const blob = new Blob([jsonString], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const safeName = (audit.fileName || "analysis").replace(/[^a-zA-Z0-9_-]/g, "_");
+  a.href = url;
+  a.download = `clauseiq_${safeName}_report.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import and restore backup JSON file into device IndexedDB
+ */
+export async function importDataFromDeviceFile(file: File): Promise<{ success: boolean; importedCount: number; message: string }> {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    let itemsToImport: SavedAuditItem[] = [];
+    if (data.documents && Array.isArray(data.documents)) {
+      itemsToImport = data.documents;
+    } else if (Array.isArray(data)) {
+      itemsToImport = data;
+    } else if (data.id && data.fileName && data.docType) {
+      // Single item
+      itemsToImport = [data];
+    }
+
+    if (itemsToImport.length === 0) {
+      return { success: false, importedCount: 0, message: "No valid document audits found in the selected file." };
+    }
+
+    let count = 0;
+    for (const item of itemsToImport) {
+      if (item.result) {
+        await saveAnalysisToDb(item.result);
+        count++;
+      }
+    }
+
+    return { success: true, importedCount: count, message: `Successfully restored ${count} document audits to device storage.` };
+  } catch (err: any) {
+    return { success: false, importedCount: 0, message: "Failed to parse backup file: " + (err.message || String(err)) };
   }
 }
 
