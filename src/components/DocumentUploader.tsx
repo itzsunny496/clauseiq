@@ -300,17 +300,6 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                       >
                         {doc.type}
                       </span>
-                      <span
-                        className={`text-xs font-bold font-mono ${
-                          doc.riskScore >= 75
-                            ? "text-rose-400"
-                            : doc.riskScore >= 40
-                            ? "text-amber-400"
-                            : "text-emerald-400"
-                        }`}
-                      >
-                        Risk: {doc.riskScore}/100
-                      </span>
                     </div>
 
                     <h4 className="font-bold text-slate-100 text-sm group-hover:text-amber-400 transition-colors">
