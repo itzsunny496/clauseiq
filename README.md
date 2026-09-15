@@ -12,7 +12,7 @@
 
 ## 📌 The Problem
 
-Over **63 million Micro, Small, and Medium Enterprises (MSMEs)** form the backbone of the Indian economy (contributing ~30% of GDP). Yet, **92% sign vendor agreements, supply contracts, and procurement invoices without legal review** because commercial legal counsel costs **₹2,000–₹8,000/hour**.
+Over **63 million Micro, Small, and Medium Enterprises (MSMEs)** form the backbone of the Indian economy (contributing ~30% of GDP). Yet, **Many vendor agreements, supply contracts, and procurement invoices without legal review** because commercial legal counsel costs **₹2,000–₹8,000/hour**.
 
 As a result, small business owners routinely fall into catastrophic contractual traps:
 - 🚨 **Predatory Payment Terms (90–120 days)** that strangle working capital and violate statutory protection caps.
