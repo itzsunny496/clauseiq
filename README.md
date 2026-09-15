@@ -36,7 +36,6 @@ No servers, no third-party API keys, and **no software/Ollama downloads required
 - Runs large language models directly inside the browser using **WebGPU** acceleration and `@mlc-ai/web-llm`.
 - Models are downloaded and cached once in the browser's persistent cache for instant offline reuse.
 - **Selectable Model Tiers**:
-  - **`SmolLM2-360M`** (~350 MB) — Ultra-fast, ideal for low-spec laptops and quick summaries.
   - **`Llama-3.2-1B`** (~800 MB, Default) — Balanced precision and speed for contract risk detection.
   - **`Qwen2.5-1.5B`** (~1.1 GB) — High-accuracy clause reasoning and legal nuance analysis.
   - **`Llama-3.2-3B`** (~2.0 GB) — Comprehensive legal reasoning for complex multi-page agreements.
