@@ -38,21 +38,7 @@ export function RiskScorecard({ result, lang }: Props) {
   const c = counts(view === "human");
   const total = clauses.length || 1;
 
-  // Unified Risk Score (0 = Safe, 100 = Maximum Risk)
-  let score: number;
-  if (view === "ai") {
-    score = result.riskScore ?? 15;
-  } else {
-    // Dynamic recalculation for Human Reviewed overrides
-    let dynamicScore = 15;
-    if (statutoryViolations.length > 0) dynamicScore += statutoryViolations.length * 25;
-    dynamicScore += c.High * 25;
-    dynamicScore += c.Medium * 10;
-    if (c.High === 0 && statutoryViolations.length === 0 && c.Medium === 0) {
-      dynamicScore = 12;
-    }
-    score = Math.min(98, Math.max(10, dynamicScore));
-  }
+  const score = result.riskScore ?? 15;
 
   const isHighRisk = score >= 70;
   const isModerateRisk = score >= 35 && score < 70;
