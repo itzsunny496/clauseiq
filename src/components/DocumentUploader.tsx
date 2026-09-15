@@ -309,7 +309,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
                             : "text-emerald-400"
                         }`}
                       >
-                        Reference: {doc.riskScore}/100
+                        Risk: {doc.riskScore}/100
                       </span>
                     </div>
 
